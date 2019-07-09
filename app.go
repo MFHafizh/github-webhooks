@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 
@@ -65,8 +64,8 @@ func handlers(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		}
 		var transID string
 
-		if pullRequest.Action == "opened" {
-			fmt.Println("pull req open")
+		if pullRequest.Action == "opened" || pullRequest.Action == "reopened" {
+			fmt.Println("pull req ", pullRequest.Action)
 			for _, transition := range transitions {
 				if transition.To.Name == "In Review" {
 					transID = transition.ID
@@ -93,11 +92,21 @@ func handlers(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 				}
 				jiraClient.Issue.AddComment(issueKey, &newComment)
 			} else {
-				BodyComment = fmt.Sprintf("\n- %s", pullRequest.PullRequest.HTMLURL)
-				updateComment := jira.Comment{
-					ID:   comment.ID,
-					Body: comment.Body + BodyComment,
+				var updateComment jira.Comment
+				if pullRequest.Action == "open" {
+					BodyComment = fmt.Sprintf("\n- %s", pullRequest.PullRequest.HTMLURL)
+					updateComment = jira.Comment{
+						ID:   comment.ID,
+						Body: comment.Body + BodyComment,
+					}
+				} else if pullRequest.Action == "reopened" {
+					BodyComment = strings.Replace(comment.Body, pullRequest.PullRequest.HTMLURL+"] (Closed)", pullRequest.PullRequest.HTMLURL+"]\n", -1)
+					updateComment = jira.Comment{
+						ID:   comment.ID,
+						Body: BodyComment,
+					}
 				}
+
 				jiraClient.Issue.UpdateComment(issueKey, &updateComment)
 			}
 		} else if pullRequest.Action == "closed" {
@@ -124,7 +133,7 @@ func handlers(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 				}
 				updateComment := jira.Comment{
 					ID:   comment.ID,
-					Body: comment.Body + " (Merged)",
+					Body: comment.Body + "(Merged)",
 				}
 				jiraClient.Issue.UpdateComment(issueKey, &updateComment)
 			} else {
@@ -239,9 +248,9 @@ func handlers(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 }
 
 func main() {
-	port := ":" + os.Getenv("PORT")
+	// port := ":" + os.Getenv("PORT")
 	InitJiraClient()
-	//port := ":8080"
+	port := ":8080"
 	router := httprouter.New()
 	fmt.Println("Running ...")
 	router.GET("/", Index)
